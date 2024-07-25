@@ -6,7 +6,7 @@ from datetime import timedelta
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, format_datetime, format_duration
-
+from operator import itemgetter
 
 def execute(filters=None):
 	columns = get_columns()
@@ -14,6 +14,12 @@ def execute(filters=None):
 	chart = get_chart_data(data)
 	report_summary = get_report_summary(data)
 	return columns, data, None, chart, report_summary
+
+
+
+
+present_records=45
+
 
 
 def get_columns():
@@ -70,6 +76,18 @@ def get_columns():
 			"width": 120,
 		},
 		{
+			"label": _("Breack In Time"),
+			"fieldname": "custom_breack_in_time",
+			"fieldtype": "Data",
+			"width": 120,
+		},
+		{
+			"label": _("Breack Out Time"),
+			"fieldname": "custom_breack_out_time",
+			"fieldtype": "Data",
+			"width": 120,
+		},
+		{
 			"label": _("Out Time"),
 			"fieldname": "out_time",
 			"fieldtype": "Data",
@@ -78,6 +96,18 @@ def get_columns():
 		{
 			"label": _("Total Working Hours"),
 			"fieldname": "working_hours",
+			"fieldtype": "Data",
+			"width": 100,
+		},
+		{
+			"label": _("Breack Hours"),
+			"fieldname": "custom_breack_hours",
+			"fieldtype": "Data",
+			"width": 100,
+		},
+		{
+			"label": _("Overtime"),
+			"fieldname": "overtime_hrs",
 			"fieldtype": "Data",
 			"width": 100,
 		},
@@ -126,34 +156,66 @@ def get_columns():
 			"options": "Attendance",
 			"width": 150,
 		},
+		{
+			"label": _("Leave Type"),
+			"fieldname": "leave_type",
+			"fieldtype": "Link",
+			"options": "Attendance",
+			"width": 150,
+		},
 	]
-
 
 def get_data(filters):
 	query = get_query(filters)
 	data = query.run(as_dict=True)
 	data = update_data(data, filters)
-	return data
 
 
+# \ get absent abd leave records
+	absent_records_filters={"status":["!=","Present"],"docstatus":1,"attendance_date":['between', [filters.from_date,filters.to_date]]}
+	if filters.employee:
+		absent_records_filters["employee"]=filters.employee
+
+	if filters.department:
+		absent_records_filters["department"]=filters.department
+
+	
+	absent_records= frappe.get_all("Attendance",fields="*",filters=absent_records_filters)
+	data+=absent_records
+# / 
+
+# \ get holiday records
+	data+=get_holidaies(get_emps(data),filters)
+# / 
+	newdata = sorted(data, key=itemgetter('attendance_date'))
+	return newdata
+
+	 
 def get_report_summary(data):
 	if not data:
 		return None
 
-	present_records = half_day_records = absent_records = late_entries = early_exits = 0
+	present_records = half_day_records = absent_records = late_entries = early_exits = leave_entries= overtime = 0
 
+
+	
 	for entry in data:
 		if entry.status == "Present":
 			present_records += 1
 		elif entry.status == "Half Day":
 			half_day_records += 1
-		else:
+		elif entry.status=="Absent":
 			absent_records += 1
-
+		elif entry.status=="On Leave":
+			leave_entries += 1
+		
 		if entry.late_entry:
 			late_entries += 1
 		if entry.early_exit:
 			early_exits += 1
+
+		if entry.overtime:
+			overtime += 1
 
 	return [
 		{
@@ -175,6 +237,12 @@ def get_report_summary(data):
 			"datatype": "Int",
 		},
 		{
+			"value": leave_entries,
+			"indicator": "Red",
+			"label": _("Leave Records"),
+			"datatype": "Int",
+		},
+		{
 			"value": late_entries,
 			"indicator": "Red",
 			"label": _("Late Entries"),
@@ -186,6 +254,13 @@ def get_report_summary(data):
 			"label": _("Early Exits"),
 			"datatype": "Int",
 		},
+		{
+			"value": overtime,
+			"indicator": "Blue",
+			"label": _("Overtime"),
+			"datatype": "Int",
+		},
+			
 	]
 
 
@@ -214,6 +289,7 @@ def get_query(filters):
 	checkin = frappe.qb.DocType("Employee Checkin")
 	shift_type = frappe.qb.DocType("Shift Type")
 
+
 	query = (
 		frappe.qb.from_(attendance)
 		.inner_join(checkin)
@@ -230,6 +306,9 @@ def get_query(filters):
 			attendance.in_time,
 			attendance.out_time,
 			attendance.working_hours,
+			attendance.custom_breack_in_time,
+			attendance.custom_breack_out_time,
+			attendance.custom_breack_hours,
 			attendance.late_entry,
 			attendance.early_exit,
 			attendance.department,
@@ -268,9 +347,11 @@ def update_data(data, filters):
 	for d in data:
 		update_late_entry(d, filters.consider_grace_period)
 		update_early_exit(d, filters.consider_grace_period)
-
+		update_overtime(d)
+		
 		d.working_hours = format_float_precision(d.working_hours)
 		d.in_time, d.out_time = format_in_out_time(d.in_time, d.out_time, d.attendance_date)
+		d.custom_breack_in_time, d.custom_breack_out_time= format_in_out_time(d.custom_breack_in_time, d.custom_breack_out_time, d.attendance_date)
 		d.shift_start, d.shift_end = convert_datetime_to_time_for_same_date(d.shift_start, d.shift_end)
 		d.shift_actual_start, d.shift_actual_end = convert_datetime_to_time_for_same_date(
 			d.shift_actual_start, d.shift_actual_end
@@ -327,3 +408,39 @@ def update_early_exit(entry, consider_grace_period):
 		entry.early_exit_hrs = entry.shift_end - entry.out_time
 	if entry.early_exit_hrs:
 		entry.early_exit_hrs = format_duration(entry.early_exit_hrs.total_seconds())
+
+
+
+def update_overtime(entry):
+	if entry.out_time and entry.out_time > entry.shift_end:
+		entry.overtime = 1
+		entry.overtime_hrs = entry.out_time - entry.shift_end 
+	if entry.overtime_hrs:
+		entry.overtime_hrs = format_duration(entry.overtime_hrs.total_seconds())
+
+
+def get_emps(data):
+	emps=[]
+	for entry in data:
+		if not entry.employee in emps:
+			emps.append(entry.employee)
+	return emps
+
+def get_holidaies(emps,filters):
+	holiday_records_data=[]
+	for emp in emps:
+		holiday_name,employee_name = frappe.db.get_value('Employee',emp, ['holiday_list','employee_name'])
+		holiday_records_filters={"holiday_date":['between', [filters.from_date,filters.to_date]]}
+		holiday_records_filters["parent"]=holiday_name
+		holiday_records= frappe.get_all("Holiday",fields="*",filters=holiday_records_filters)
+		for holiday in holiday_records:
+			dict_item = {'name': '', 'employee':emp, 'employee_name': employee_name, '.shift':filters.shift, 'attendance_date':holiday.holiday_date, 'status':'Rest Day', 'in_time':'', 'out_time':'', 'working_hours':'', 'late_entry':'', 'early_exit':'', 'department':'', 'company': '', 'shift_start':'', 'shift_end':'', 'shift_actual_start':'', 'shift_actual_end':'', 'enable_late_entry_marking':'', 'late_entry_grace_period': '', 'enable_early_exit_marking':'', 'early_exit_grace_period':'', 'late_entry_hrs': '', 'overtime':'', 'overtime_hrs': ''}
+			dict_item =frappe._dict(dict_item)
+			holiday_records_data.append(dict_item)
+	return holiday_records_data
+
+
+
+
+	
+

@@ -18,7 +18,6 @@ class EmployeeCheckin(Document):
 		validate_active_employee(self.employee)
 		self.validate_duplicate_log()
 		self.fetch_shift()
-		self.set_geolocation_from_coordinates()
 
 	def validate_duplicate_log(self):
 		doc = frappe.db.exists(
@@ -60,28 +59,6 @@ class EmployeeCheckin(Document):
 				self.shift_end = shift_actual_timings.end_datetime
 		else:
 			self.shift = None
-
-	@frappe.whitelist()
-	def set_geolocation_from_coordinates(self):
-		if not frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"):
-			return
-
-		if not (self.latitude and self.longitude):
-			return
-
-		self.geolocation = frappe.json.dumps(
-			{
-				"type": "FeatureCollection",
-				"features": [
-					{
-						"type": "Feature",
-						"properties": {},
-						# geojson needs coordinates in reverse order: long, lat instead of lat, long
-						"geometry": {"type": "Point", "coordinates": [self.longitude, self.latitude]},
-					}
-				],
-			}
-		)
 
 
 @frappe.whitelist()
@@ -143,6 +120,9 @@ def mark_attendance_and_link_log(
 	early_exit=False,
 	in_time=None,
 	out_time=None,
+	breack_hours=None,
+	breack_in=None,
+	breack_out=None,
 	shift=None,
 ):
 	"""Creates an attendance and links the attendance to the Employee Checkin.
@@ -176,6 +156,9 @@ def mark_attendance_and_link_log(
 					"early_exit": early_exit,
 					"in_time": in_time,
 					"out_time": out_time,
+					"custom_breack_hours":breack_hours,
+					"custom_breack_in_time":breack_in,
+					"custom_breack_out_time":breack_out
 				}
 			).submit()
 
@@ -203,7 +186,8 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
 	:param working_hours_calc_type: One of: 'First Check-in and Last Check-out', 'Every Valid Check-in and Check-out'
 	"""
 	total_hours = 0
-	in_time = out_time = None
+	total_breack_hours =0
+	in_time = out_time =breack_in = breack_out = None
 	if check_in_out_type == "Alternating entries as IN and OUT during the same shift":
 		in_time = logs[0].time
 		if len(logs) >= 2:
@@ -216,20 +200,58 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
 			while len(logs) >= 2:
 				total_hours += time_diff_in_hours(logs[0].time, logs[1].time)
 				del logs[:2]
+		if len(logs) < 2:
+			if logs[0].log_type =="IN":
+				in_time =logs[0].time
+				out_time=None
+			elif logs[0].log_type =="OUT":
+				out_time= logs[0].time
+				in_time =None
+
 
 	elif check_in_out_type == "Strictly based on Log Type in Employee Checkin":
 		if working_hours_calc_type == "First Check-in and Last Check-out":
 			first_in_log_index = find_index_in_dict(logs, "log_type", "IN")
-			first_in_log = logs[first_in_log_index] if first_in_log_index or first_in_log_index == 0 else None
+			first_in_log = (
+				logs[first_in_log_index] if first_in_log_index or first_in_log_index == 0 else None
+			)
 			last_out_log_index = find_index_in_dict(reversed(logs), "log_type", "OUT")
 			last_out_log = (
 				logs[len(logs) - 1 - last_out_log_index]
 				if last_out_log_index or last_out_log_index == 0
 				else None
 			)
+
 			if first_in_log and last_out_log:
 				in_time, out_time = first_in_log.time, last_out_log.time
 				total_hours = time_diff_in_hours(in_time, out_time)
+			elif first_in_log:
+				in_time = first_in_log.time
+			elif last_out_log:
+				out_time = last_out_log.time
+
+
+			first_breack_in_log_index = find_index_in_dict(logs, "log_type", "BREACK IN")
+			first_breack_in_log = (
+				logs[first_breack_in_log_index] if first_breack_in_log_index or first_breack_in_log_index == 1 else None
+			)
+			last_breack_out_log_index = find_index_in_dict(reversed(logs), "log_type", "BREACK OUT")
+			last_breack_out_log = (
+				logs[len(logs) - 1 - last_breack_out_log_index]
+				if last_breack_out_log_index or last_breack_out_log_index == 0
+				else None
+			)
+
+
+			if first_breack_in_log and last_breack_out_log:
+				breack_in, breack_out = first_breack_in_log.time, last_breack_out_log.time
+				total_breack_hours = time_diff_in_hours(breack_in, breack_out)
+			elif first_breack_in_log:
+				breack_in = first_breack_in_log.time
+			elif last_breack_out_log:
+				breack_out = last_breack_out_log.time
+			
+
 		elif working_hours_calc_type == "Every Valid Check-in and Check-out":
 			in_log = out_log = None
 			for log in logs:
@@ -249,8 +271,16 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type):
 			if in_log and out_log:
 				out_time = out_log.time
 				total_hours += time_diff_in_hours(in_log.time, out_log.time)
+			elif in_log:
+				in_time =in_log.time
+			elif out_log:
+				out_time =out_log.time
 
-	return total_hours, in_time, out_time
+			
+	if total_breack_hours:
+		total_hours = total_hours-total_breack_hours
+	
+	return total_hours,in_time, out_time,total_breack_hours,breack_in,breack_out
 
 
 def time_diff_in_hours(start, end):
@@ -269,9 +299,7 @@ def handle_attendance_exception(log_names: list, error_message: str):
 
 
 def add_comment_in_checkins(log_names: list, error_message: str):
-	text = "{prefix}<br>{error_message}".format(
-		prefix=frappe.bold(_("Reason for skipping auto attendance:")), error_message=error_message
-	)
+	text = "{0}<br>{1}".format(frappe.bold(_("Reason for skipping auto attendance:")), error_message)
 
 	for name in log_names:
 		frappe.get_doc(

@@ -1,0 +1,159 @@
+{%const emps = []; %}
+{% for(var j=0, ln=data.length;j<ln ; j++){ %}
+{% const found = emps.find((element) => element ==data[j].employee );
+if(!found){
+emps.push(data[j].employee);
+} %}
+{% } %}
+
+{% for(var j=0, ln=emps.length;j<ln ; j++){ %}
+
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th scope="col">{%= __("Employee") %}</th>
+      <th scope="col">{%= __("Attendance Date") %}</th>
+      <th scope="col">{%= __("Status") %}</th>
+      <th scope="col">{%= __("In Time") %}</th>
+      <th scope="col">{%= __("Breack In Time") %}</th>
+      <th scope="col">{%= __("Breack Out Time") %}</th>
+      <th scope="col">{%= __("Out Time") %}</th>
+      <th scope="col">{%= __("Total Working Hours") %}</th>
+      <th scope="col">{%= __("Total Breack Hours") %}</th>
+      <th scope="col">{%= __("Late Entry") %}</th>
+      <th scope="col">{%= __("Overtime") %}</th>
+      <th scope="col">{%= __("Leave Type") %}</th>
+      
+    </tr>
+  </thead>
+  <tbody>
+    {% 
+      let present_records = 0;
+      let half_day_records = 0;
+      let absent_records = 0;
+      let leave_entries = 0;
+      let late_entries = 0;
+      let early_exits = 0;
+      let overtime = 0;
+    %}
+{% for(var i=0, l=data.length; i<l; i++) { %}
+
+{% if (data[i].employee == emps[j])  %}
+      
+      <tr {% if data[i].status=="Rest Day" %} class="rest_day" {% endif %}>
+        {% if (data[i].status =="Present") {
+          present_records= present_records + 1;
+        }else if (data[i].status =="Half Day") {
+          half_day_records = half_day_records + 1;
+        } else if (data[i].status =="Absent") {
+          absent_records = absent_records + 1;
+        } else if (data[i].status =="On Leave") {
+          leave_entries = leave_entries + 1;
+        }
+        if (data[i].late_entry) {
+          late_entries = late_entries + 1;
+        }
+        if (data[i].early_exit) {
+          early_exits = early_exits + 1;
+        }
+        if (data[i].overtime) {
+          overtime = overtime + 1;
+        } %}
+      <td>{%= data[i].employee_name  %}</td>
+      <td>{%= frappe.datetime.str_to_user(data[i].attendance_date)  %}</td>
+      <td>{%= data[i].status %}</td>
+      <td {% if data[i].late_entry %} class="time_color"  {% endif %}>{%= data[i].in_time  %}</td>
+      <td>{%= data[i].custom_breack_in_time  %}</td>
+      <td>{%= data[i].custom_breack_out_time  %}</td>
+      <td {% if data[i].early_exit %} class="time_color"  {% endif %}>{%= data[i].out_time  %}</td>
+      <td>{%= data[i].working_hours  %}</td>
+      <td>{%= data[i].custom_breack_hours  %}</td>
+      <td>{%= data[i].late_entry_hrs  %}</td>
+      <td>{%= data[i].overtime_hrs  %}</td>
+      <td>{%= data[i].leave_type  %}</td>
+      </tr>
+  </tbody>
+{% endif %}
+
+{% } %}
+</table>
+<div class="flex-container container custom_div">
+  <div class="item">
+    {%= __("Present Records") %}
+    <br>
+    {{present_records}}
+  </div>
+  <div class="item">
+    {%= __("Half Day Records") %}
+    <br>
+    {{ half_day_records }}
+  </div>
+  <div class="item">
+    {%= __("Absent Records") %}
+    <br>
+    {{ absent_records }}
+  </div>
+  <div class="item">
+    {%= __("Leave Records") %}
+    <br>
+    {{ leave_entries }}
+  </div>
+  <div class="item">
+    {%= __("Late Entries") %}
+    <br>
+    {{ late_entries }}
+  </div>
+  <div class="item">
+    <b>{%= __("Early Exits") %} </b>
+    <br>
+    {{ early_exits }}
+  </div>
+  <div class="item">
+    <b>{%= __("Overtime") %} </b>
+    <br>
+    {{ overtime }}
+  </div>
+  </div>
+  <div class="page-break"></div>
+{% } %}
+
+
+
+
+
+  
+
+<style>
+    .time_color{
+        color: red;
+    }
+    .rest_day{
+      font-weight: bold;
+      color:brown;
+    }
+    .flex-container {
+    display: flex;
+    }
+    .item{
+    width:33%;
+    padding: 1px;
+    text-align: center;
+    font-size:10px;
+    font-weight: bold;
+    }
+  .print-format-gutter td {
+  padding: 1px !important;
+
+  }
+  .print-format-gutter th {
+  padding: 1px !important;
+
+  }
+.custom_div{
+  padding: 1px;
+}
+.table{
+  margin: 5px 0px;
+  font-size:10px;
+}
+</style>

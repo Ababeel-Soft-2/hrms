@@ -36,35 +36,42 @@ class ShiftType(Document):
 
 		logs = self.get_employee_checkins()
 
+
 		for key, group in itertools.groupby(logs, key=lambda x: (x["employee"], x["shift_start"])):
 			single_shift_logs = list(group)
-			attendance_date = key[1].date()
-			employee = key[0]
+			if key[1]:
+				attendance_date = key[1].date()
+				employee = key[0]
 
-			if not self.should_mark_attendance(employee, attendance_date):
-				continue
+				if not self.should_mark_attendance(employee, attendance_date):
+					continue
 
-			(
-				attendance_status,
-				working_hours,
-				late_entry,
-				early_exit,
-				in_time,
-				out_time,
-			) = self.get_attendance(single_shift_logs)
+				(
+					attendance_status,
+					working_hours,
+					late_entry,
+					early_exit,
+					in_time,
+					out_time,
+					breack_hours,
+					breack_in,
+					breack_out,
+				) = self.get_attendance(single_shift_logs)
 
-			mark_attendance_and_link_log(
-				single_shift_logs,
-				attendance_status,
-				attendance_date,
-				working_hours,
-				late_entry,
-				early_exit,
-				in_time,
-				out_time,
-				self.name,
-			)
-
+				mark_attendance_and_link_log(
+					single_shift_logs,
+					attendance_status,
+					attendance_date,
+					working_hours,
+					late_entry,
+					early_exit,
+					in_time,
+					out_time,
+					breack_hours,
+					breack_in,
+					breack_out,
+					self.name
+				)
 		# commit after processing checkin logs to avoid losing progress
 		frappe.db.commit()  # nosemgrep
 
@@ -111,7 +118,7 @@ class ShiftType(Document):
 		2. Logs are in chronological order
 		"""
 		late_entry = early_exit = False
-		total_working_hours, in_time, out_time = calculate_working_hours(
+		total_working_hours, in_time, out_time ,total_breack_hours,breack_in,breack_out= calculate_working_hours(
 			logs, self.determine_check_in_and_check_out, self.working_hours_calculation_based_on
 		)
 		if (
@@ -132,15 +139,17 @@ class ShiftType(Document):
 			self.working_hours_threshold_for_absent
 			and total_working_hours < self.working_hours_threshold_for_absent
 		):
-			return "Absent", total_working_hours, late_entry, early_exit, in_time, out_time
+			return "Absent", total_working_hours, late_entry, early_exit, in_time, out_time,total_breack_hours,breack_in,breack_out
 
 		if (
 			self.working_hours_threshold_for_half_day
 			and total_working_hours < self.working_hours_threshold_for_half_day
 		):
-			return "Half Day", total_working_hours, late_entry, early_exit, in_time, out_time
+			return "Half Day", total_working_hours, late_entry, early_exit, in_time, out_time,total_breack_hours,breack_in,breack_out
 
-		return "Present", total_working_hours, late_entry, early_exit, in_time, out_time
+
+
+		return "Present", total_working_hours, late_entry, early_exit, in_time, out_time,total_breack_hours,breack_in,breack_out
 
 	def mark_absent_for_dates_with_no_attendance(self, employee: str):
 		"""Marks Absents for the given employee on working days in this shift that have no attendance marked.
@@ -182,8 +191,10 @@ class ShiftType(Document):
 		holiday_list = self.get_holiday_list(employee)
 		holiday_dates = get_holiday_dates_between(holiday_list, start_date, end_date)
 		# skip dates with attendance
-		marked_attendance_dates = self.get_marked_attendance_dates_between(employee, start_date, end_date)
-
+		marked_attendance_dates = self.get_marked_attendance_dates_between(
+			employee, start_date, end_date
+		)
+		
 		return sorted(set(date_range) - set(holiday_dates) - set(marked_attendance_dates))
 
 	def get_start_and_end_dates(self, employee):
@@ -220,7 +231,9 @@ class ShiftType(Document):
 			return None, None
 		return start_date, end_date
 
-	def get_marked_attendance_dates_between(self, employee: str, start_date: str, end_date: str) -> list[str]:
+	def get_marked_attendance_dates_between(
+		self, employee: str, start_date: str, end_date: str
+	) -> list[str]:
 		Attendance = frappe.qb.DocType("Attendance")
 		return (
 			frappe.qb.from_(Attendance)
