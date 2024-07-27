@@ -54,7 +54,7 @@ def get_columns():
 		{
 			"label": _("Status"),
 			"fieldname": "status",
-			"fieldtype": "Data",
+			"fieldtype": "Select",
 			"width": 80,
 		},
 		{

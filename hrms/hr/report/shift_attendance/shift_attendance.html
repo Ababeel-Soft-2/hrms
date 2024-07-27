@@ -61,7 +61,7 @@ emps.push(data[j].employee);
         } %}
       <td>{%= data[i].employee_name  %}</td>
       <td>{%= frappe.datetime.str_to_user(data[i].attendance_date)  %}</td>
-      <td>{%= data[i].status %}</td>
+      <td>{%= __(data[i].status) %}</td>
       <td {% if data[i].late_entry %} class="time_color"  {% endif %}>{%= data[i].in_time  %}</td>
       <td>{%= data[i].custom_breack_in_time  %}</td>
       <td>{%= data[i].custom_breack_out_time  %}</td>
