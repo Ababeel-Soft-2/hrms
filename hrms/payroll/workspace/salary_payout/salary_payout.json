@@ -9,7 +9,7 @@
  "hide_custom": 0,
  "icon": "income",
  "idx": 0,
- "is_hidden": 0,
+ "is_hidden": 1,
  "label": "Salary Payout",
  "links": [
   {
@@ -370,7 +370,7 @@
    "type": "Link"
   }
  ],
- "modified": "2024-07-22 18:07:37.351654",
+ "modified": "2024-07-27 02:27:59.698931",
  "modified_by": "Administrator",
  "module": "Payroll",
  "name": "Salary Payout",
