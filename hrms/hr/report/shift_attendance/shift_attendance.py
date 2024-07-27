@@ -11,9 +11,9 @@ from operator import itemgetter
 def execute(filters=None):
 	columns = get_columns()
 	data = get_data(filters)
-	chart = get_chart_data(data)
+	#chart = get_chart_data(data)
 	report_summary = get_report_summary(data)
-	return columns, data, None, chart, report_summary
+	return columns, data, None, None, report_summary
 
 
 
