@@ -64,7 +64,7 @@ emps.push(data[j].employee);
       <td>{%= __(data[i].status) %}</td>
       <td {% if data[i].late_entry %} class="time_color"  {% endif %}>{%= data[i].in_time  %}</td>
       <td>{%= data[i].custom_breack_in_time  %}</td>
-      <td>{%= data[i].custom_breack_out_time  %}</td>
+      <td {% if (data[i].custom_breack_hours >1 ) %} class="time_color"  {% endif %} >{%= data[i].custom_breack_out_time  %}</td>
       <td {% if data[i].early_exit %} class="time_color"  {% endif %}>{%= data[i].out_time  %}</td>
       <td>{%= data[i].working_hours  %}</td>
       <td>{%= data[i].custom_breack_hours  %}</td>
