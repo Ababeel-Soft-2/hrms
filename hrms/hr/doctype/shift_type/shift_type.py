@@ -316,3 +316,56 @@ async def asyn_process_auto_attendance(self):
 				self.mark_absent_for_dates_with_no_attendance(employee)
 
 			frappe.db.commit()  # nosemgrep
+
+
+
+def cron_process_auto_attendance(shift_name):
+		self = frappe.get_doc("Shift Type",shift_name)
+		logs = self.get_employee_checkins()
+		for key, group in itertools.groupby(logs, key=lambda x: (x["employee"], x["shift_start"])):
+			single_shift_logs = list(group)
+			if key[1]:
+				attendance_date = key[1].date()
+				employee = key[0]
+
+				if not self.should_mark_attendance(employee, attendance_date):
+					continue
+
+				(
+					attendance_status,
+					working_hours,
+					late_entry,
+					early_exit,
+					in_time,
+					out_time,
+					breack_hours,
+					breack_in,
+					breack_out,
+				) = self.get_attendance(single_shift_logs)
+
+				mark_attendance_and_link_log(
+					single_shift_logs,
+					attendance_status,
+					attendance_date,
+					working_hours,
+					late_entry,
+					early_exit,
+					in_time,
+					out_time,
+					breack_hours,
+					breack_in,
+					breack_out,
+					self.name
+				)
+		# commit after processing checkin logs to avoid losing progress
+		frappe.db.commit()  # nosemgrep
+
+		assigned_employees = self.get_assigned_employees(self.process_attendance_after, True)
+
+		# mark absent in batches & commit to avoid losing progress since this tries to process remaining attendance
+		# right from "Process Attendance After" to "Last Sync of Checkin"
+		for batch in create_batch(assigned_employees, EMPLOYEE_CHUNK_SIZE):
+			for employee in batch:
+				self.mark_absent_for_dates_with_no_attendance(employee)
+
+			frappe.db.commit()  # nosemgrep
