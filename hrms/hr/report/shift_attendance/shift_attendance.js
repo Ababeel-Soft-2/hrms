@@ -22,7 +22,6 @@ frappe.query_reports["Shift Attendance"] = {
 			label: __("Employee"),
 			fieldtype: "Link",
 			options: "Employee",
-			reqd: 1,
 		},
 		{
 			fieldname: "shift",
